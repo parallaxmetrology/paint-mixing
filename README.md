@@ -105,7 +105,8 @@ Plan.paletteOf(piles);                                         // the shared pal
 Recipes are chosen for the whole plan at once: each mass keeps the candidate mixes that stay in its value
 band and come close to its colour, and then one per mass is picked to minimise colour error plus a cost for
 every different tube the plan needs. On the *Milkmaid* with the earth palette and four values, that gives
-six piles from five tubes, all inside their bands. `Plan.accents` gives small, sharply different passages
+six piles from four or five tubes, all inside their bands. The exact count depends on how the picture is
+resized before planning: the demo's browser resize gives five, a Lanczos resize in Python gives four. `Plan.accents` gives small, sharply different passages
 (a red roof in an ochre field) a pile of their own, and `Plan.quantities` totals what to squeeze out.
 
 ## The model
