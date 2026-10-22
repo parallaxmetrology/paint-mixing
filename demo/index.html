@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>paint-mixing demo</title>
+<style>
+  :root { --bg:#f6f3ee; --panel:#fffdf9; --ink:#2b2622; --dim:#7a7068; --line:#e3ddd4; --accent:#9b4a2c; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 Georgia, "Times New Roman", serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-weight: 400; font-size: 32px; margin: 0 0 4px; }
+  h2 { font-weight: 400; font-size: 22px; margin: 0 0 4px; }
+  .lede, .note { color: var(--dim); }
+  .note { font-size: 14px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 20px; margin-top: 22px; }
+  .mono, label, select, input, button, code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin: 12px 0; }
+  select, input[type=number] { padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: white; }
+  input[type=number] { width: 4.2em; }
+  button { padding: 6px 12px; border: 1px solid var(--accent); background: var(--accent); color: white; border-radius: 4px; cursor: pointer; }
+  .sw { display: inline-block; width: 40px; height: 40px; border-radius: 4px; border: 1px solid rgba(0,0,0,.12); vertical-align: middle; flex: none; }
+  .pair { display: flex; gap: 12px; align-items: center; }
+  .out { display: grid; gap: 8px; margin-top: 10px; }
+  .item { display: flex; gap: 12px; align-items: center; padding: 8px; border-top: 1px solid var(--line); }
+  .item:first-child { border-top: 0; }
+  .item b { font-weight: 600; }
+  .warn { color: #b0442d; } .mild { color: #9a7a1d; }
+  .plan { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+  canvas { width: 100%; height: auto; border-radius: 4px; display: block; }
+  @media (max-width: 700px) { .plan { grid-template-columns: 1fr; } }
+  footer { margin-top: 28px; font-size: 13px; color: var(--dim); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>paint-mixing</h1>
+  <p class="lede">Three painter's questions, answered by the library's Kubelka–Munk model. Colours are estimates for ordinary artist-grade oils, not measurements of any brand: treat every answer as a first pile and judge it by eye.</p>
+
+  <section id="add">
+    <h2>1 · What do I add?</h2>
+    <p class="note">Describe the pile you have, then say what it needs by eye. The suggestions give an amount as a share of the pile, and the side effects to expect.</p>
+    <div class="row" id="pileRows"></div>
+    <div class="row">
+      <label>value <select id="askValue"></select></label>
+      <label>temperature <select id="askTemp"></select></label>
+      <label>intensity <select id="askChroma"></select></label>
+      <label>palette <select id="addPalette"></select></label>
+      <button id="addGo">Suggest</button>
+    </div>
+    <div class="pair"><span class="sw" id="nowSw"></span><span id="nowTxt" class="mono"></span><span>→</span><span class="sw" id="goalSw"></span><span class="mono note">goal</span></div>
+    <div class="out" id="addOut"></div>
+  </section>
+
+  <section id="reach">
+    <h2>2 · Can these tubes reach it?</h2>
+    <p class="note">Every mix of up to three colour tubes plus white, in simple part ratios, is enumerated; the nearest one to your colour is returned as a recipe. The first run for a palette takes a moment.</p>
+    <div class="row">
+      <label>colour <input type="color" id="target" value="#6f8a5a"></label>
+      <label>palette <select id="reachPalette"></select></label>
+      <button id="reachGo">Find a recipe</button>
+    </div>
+    <div class="out" id="reachOut"></div>
+  </section>
+
+  <section id="plan">
+    <h2>3 · One shared palette for a value plan</h2>
+    <p class="note">The picture is squinted, cut into value bands and split into masses; one recipe per mass is chosen for the whole plan at once, so it needs few tubes. Example: Vermeer, <i>The Milkmaid</i>, Rijksmuseum SK-A-2344, public domain.</p>
+    <div class="row">
+      <label>values <select id="k"><option>3</option><option selected>4</option><option>5</option></select></label>
+      <label>palette <select id="planPalette"></select></label>
+      <button id="planGo">Plan</button>
+      <span class="mono note" id="planNote"></span>
+    </div>
+    <div class="plan">
+      <canvas id="photo"></canvas>
+      <canvas id="mixed"></canvas>
+    </div>
+    <div class="out" id="planOut"></div>
+  </section>
+
+  <footer>Source and docs: <a href="https://github.com/parallaxmetrology/paint-mixing">github.com/parallaxmetrology/paint-mixing</a>. The two-constant model and the historical catalogue are ported from <a href="https://github.com/aliceisjustplaying/claude-paint">claude-paint</a> (MIT).</footer>
+</main>
+
+<script src="../src/reach-mix.js"></script>
+<script src="../src/spectral.js"></script>
+<script src="../src/steer.js"></script>
+<script src="../src/plan.js"></script>
+<script>
+"use strict";
+const RM = window.ReachMix, S = window.Steer, P = window.Plan, $ = id => document.getElementById(id);
+const rgbCss = c => `rgb(${c[0]},${c[1]},${c[2]})`;
+const labCss = lab => rgbCss(RM.fromOklab(lab[0], lab[1], lab[2]));
+const name = id => S.BY[id].name;
+const recipeText = parts => { const r = S.recipe(parts); return r.lines.map(l => `${l.parts} ${name(l.id)}`).join(" + ") + (r.traces.length ? ` + a trace of ${r.traces.map(name).join(", ")}` : ""); };
+const fillPalettes = sel => { for (const p of S.PALETTES) sel.add(new Option(`${p.name} (${p.ids.length})`, p.id)); };
+const paletteIds = sel => S.PALETTES.find(p => p.id === sel.value).ids;
+
+// ---------- 1 · what do I add ----------
+const ASK = [["-2", "a lot less"], ["-1", "a little less"], ["0", "leave it"], ["1", "a little more"], ["2", "a lot more"]];
+const ASK_WORDS = { askValue: ["much darker", "darker", "leave it", "lighter", "much lighter"], askTemp: ["much cooler", "cooler", "leave it", "warmer", "much warmer"], askChroma: ["much duller", "duller", "leave it", "more intense", "much more intense"] };
+for (const id of ["askValue", "askTemp", "askChroma"]) ASK.forEach(([v], i) => $(id).add(new Option(ASK_WORDS[id][i], v, v === "0", v === "0")));
+$("askValue").value = "1"; $("askTemp").value = "1";
+fillPalettes($("addPalette")); $("addPalette").value = "starter";
+const START = [["S", 2], ["U", 1], ["W", 2]];
+START.forEach(([id, parts], k) => {
+  const sel = document.createElement("select"); sel.id = "t" + k;
+  sel.add(new Option("—", ""));
+  for (const t of S.TUBES) sel.add(new Option(t.name, t.id));
+  sel.value = id;
+  const n = document.createElement("input"); n.type = "number"; n.min = "0"; n.step = "0.5"; n.value = parts; n.id = "p" + k;
+  const lab = document.createElement("label"); lab.append(sel, " ", n, " parts");
+  $("pileRows").append(lab);
+});
+function pileNow() {
+  const parts = {};
+  for (let k = 0; k < START.length; k++) { const id = $("t" + k).value, p = +$("p" + k).value; if (id && p > 0) parts[id] = (parts[id] || 0) + p; }
+  return parts;
+}
+function suggestNow() {
+  const parts = pileNow(), out = $("addOut"); out.innerHTML = "";
+  const now = S.colour(parts); if (!now) { out.textContent = "Add a paint to the pile."; return; }
+  const asks = { value: +$("askValue").value, temp: +$("askTemp").value, chroma: +$("askChroma").value };
+  const goal = S.goalFrom(now.lab, asks);
+  $("nowSw").style.background = rgbCss(now.rgb); $("nowTxt").textContent = S.describe(now.lab); $("goalSw").style.background = labCss(goal);
+  const avail = paletteIds($("addPalette")), r = S.suggest(parts, goal, avail);
+  const rows = r.singles.slice(0, 4).map(s => ({ ids: [s.id], fracs: [s.frac], c: s.c, d: s.d }));
+  if (r.pair) rows.unshift({ ids: r.pair.ids, fracs: r.pair.fracs, c: r.pair.c, d: r.pair.d, pair: true });
+  if (!rows.length) { out.textContent = "Nothing on this palette moves the pile that way."; return; }
+  for (const x of rows) {
+    const side = S.sideEffects(now.lab, x.c.lab, asks).map(e => `<span class="${e.against ? "warn" : "mild"}">${e.text}</span>`).join(", ");
+    const what = x.ids.map((id, j) => `<b>${S.amountWords(x.fracs[j])}</b> of ${name(id)} <span class="note">(${S.fracLabel(x.fracs[j])})</span>`).join(" and ");
+    const gets = Math.max(0, Math.round(100 * (1 - x.d / r.start)));
+    const div = document.createElement("div"); div.className = "item";
+    div.innerHTML = `<span class="sw" style="background:${rgbCss(x.c.rgb)}"></span><div>${x.pair ? "Together: " : ""}${what}<div class="note mono">gets ${gets}% of the way${side ? " · also " + side : ""}</div></div>`;
+    out.append(div);
+  }
+}
+$("addGo").onclick = suggestNow;
+
+// ---------- 2 · can these tubes reach it ----------
+fillPalettes($("reachPalette")); $("reachPalette").value = "starter";
+function reachNow() {
+  const out = $("reachOut"); out.textContent = "Mixing…";
+  setTimeout(() => {
+    const [r, g, b] = RM.hexRgb($("target").value), goal = [0, 0, 0];
+    RM.oklab(RM.toLin(r), RM.toLin(g), RM.toLin(b), goal, 0);
+    const f = S.fresh(goal, paletteIds($("reachPalette")));
+    out.innerHTML = "";
+    if (!f) { out.textContent = "No mix found."; return; }
+    const verdict = f.d < .02 ? "within reach" : f.d < .05 ? "close" : "out of reach: this is as near as these tubes get";
+    const div = document.createElement("div"); div.className = "item";
+    div.innerHTML = `<span class="sw" style="background:${$("target").value}"></span><span>→</span><span class="sw" style="background:${rgbCss(f.c.rgb)}"></span><div>${recipeText(f.parts)}<div class="note mono">${verdict} · distance ${(100 * f.d).toFixed(1)}</div></div>`;
+    out.append(div);
+  }, 20);
+}
+$("reachGo").onclick = reachNow;
+
+// ---------- 3 · value plan ----------
+fillPalettes($("planPalette")); $("planPalette").value = "earth";
+const MAX_SIDE = 420, img = new Image();
+let W = 0, H = 0, rawLab = null, detail = null, rgba = null;
+img.onload = () => {
+  const s = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+  W = Math.round(img.naturalWidth * s); H = Math.round(img.naturalHeight * s);
+  const c = $("photo"); c.width = W; c.height = H;
+  const x = c.getContext("2d", { willReadFrequently: true }); x.drawImage(img, 0, 0, W, H);
+  rgba = x.getImageData(0, 0, W, H);
+  rawLab = P.toLab(rgba.data, W * H);
+  detail = P.squint(rawLab, W, H, 2 * Math.max(W, H) / MAX_SIDE);
+  planNow();
+};
+img.src = "../examples/milkmaid.jpg";
+function planNow() {
+  if (!rawLab) return;
+  $("planNote").textContent = "planning…"; $("planOut").innerHTML = "";
+  setTimeout(() => {
+    const t0 = performance.now(), k = +$("k").value;
+    const lab = P.squint(rawLab, W, H, 7 * Math.max(W, H) / MAX_SIDE); // a hard squint
+    const cuts = P.valueCuts(lab.L, k);
+    const M = P.accents(P.masses(lab, cuts, { perBand: 2 }), detail, cuts);
+    const piles = P.piles(M.list, cuts, paletteIds($("planPalette")));
+    // paint each mass with its predicted pile
+    const c = $("mixed"); c.width = W; c.height = H;
+    const x = c.getContext("2d"), im = x.createImageData(W, H);
+    for (let i = 0; i < W * H; i++) { const p = piles[M.label[i]], rgb = p && !p.none ? p.rgb : [255, 255, 255]; im.data.set([rgb[0], rgb[1], rgb[2], 255], 4 * i); }
+    x.putImageData(im, 0, 0);
+    const pal = P.paletteOf(piles);
+    $("planNote").textContent = `${piles.length} piles from ${pal.length} tubes · ${Math.round(performance.now() - t0)} ms`;
+    const head = document.createElement("div"); head.className = "note mono"; head.textContent = "palette: " + pal.map(name).join(", ");
+    $("planOut").append(head);
+    piles.forEach((p, i) => {
+      if (p.none) return;
+      const div = document.createElement("div"); div.className = "item";
+      const check = p.inBand ? "stays in its value band" : `<span class="warn">reads as value band ${p.reads + 1}, not ${p.mass.band + 1}</span>`;
+      div.innerHTML = `<span class="sw" style="background:${labCss(p.mass.lab)}"></span><span class="sw" style="background:${rgbCss(p.rgb)}"></span><div>${i + 1}. ${recipeText(p.parts)}${p.mass.accent ? " <span class='note'>(accent)</span>" : ""}<div class="note mono">${Math.round(100 * p.mass.area)}% of the picture · ${P.valueWords(p.mass.lab[0])}, ≈ Munsell ${P.munsell(p.mass.lab[0]).toFixed(1)} · ${check}</div></div>`;
+      $("planOut").append(div);
+    });
+  }, 20);
+}
+$("planGo").onclick = planNow;
+
+suggestNow();
+</script>
+</body>
+</html>

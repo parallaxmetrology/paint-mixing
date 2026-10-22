@@ -1,0 +1,15 @@
+{
+  "name": "paint-mixing",
+  "version": "0.1.0",
+  "description": "Kubelka–Munk paint mixing for painters' questions: what to add to a pile that is almost right, whether a set of tubes can reach a colour, and one shared palette for a value plan.",
+  "main": "index.js",
+  "files": ["index.js", "src/", "LICENSE", "THIRD_PARTY_NOTICES.md", "README.md"],
+  "scripts": {
+    "test": "node --test test/steer.test.js test/plan.test.js test/reach.test.js test/white-identification.test.js test/api.test.js"
+  },
+  "keywords": ["paint", "color-mixing", "kubelka-munk", "oil-painting", "pigment", "palette", "oklab", "spectral"],
+  "author": "Russell Parrish (https://www.parallaxmetrology.com)",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/parallaxmetrology/paint-mixing.git" },
+  "engines": { "node": ">=20" }
+}
